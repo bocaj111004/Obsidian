@@ -1951,7 +1951,8 @@ do
         KeyPicker.Menu = MenuTable
 
         local ModeButtons = {}
-        for _, Mode in pairs(Info.Modes) do
+		local Modes = {"Hold", "Toggle", "Always"}
+        for _, Mode in pairs(Modes) do
             local ModeButton = {}
 
             local Button = New("TextButton", {
