@@ -1946,24 +1946,13 @@ do
         }
 
         local IsModifierInput = function(Input)
-            return Input.UserInputType == Enum.UserInputType.Keyboard and ModifiersInput[Input.KeyCode] ~= nil
+            return false
         end
 
         local GetActiveModifiers = function()
-            local ActiveModifiers = {}
+          
 
-            for Name, Input in Modifiers do
-                if table.find(ActiveModifiers, Name) then
-                    continue
-                end
-                if not UserInputService:IsKeyDown(Input) then
-                    continue
-                end
-
-                table.insert(ActiveModifiers, Name)
-            end
-
-            return ActiveModifiers
+            return {}
         end
 
         local AreModifiersHeld = function(Required)
