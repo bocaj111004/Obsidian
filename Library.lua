@@ -100,22 +100,24 @@ local ObsidianImageManager = {
             RobloxId = 139785960036434,
             Path = "Obsidian/assets/TransparencyTexture.png",
 
-            Id = nil
+            Id = nil,
         },
-        
+
         SaturationMap = {
             RobloxId = 4155801252,
             Path = "Obsidian/assets/SaturationMap.png",
 
-            Id = nil
-        }
-    }
+            Id = nil,
+        },
+    },
 }
 do
     local BaseURL = "https://raw.githubusercontent.com/deividcomsono/Obsidian/refs/heads/main/"
 
     local function RecursiveCreatePath(Path: string, IsFile: boolean?)
-        if not isfolder or not makefolder then return end
+        if not isfolder or not makefolder then
+            return
+        end
 
         local Segments = Path:split("/")
         local TraversedPath = ""
@@ -253,12 +255,14 @@ local Templates = {
         Resizable = true,
         SearchbarSize = UDim2.fromScale(1, 1),
         CornerRadius = 4,
+        Compact = false,
+        DisableCompactChanges = false,
         NotifySide = "Right",
         ShowCustomCursor = true,
         Font = Enum.Font.Code,
         ToggleKeybind = Enum.KeyCode.RightControl,
         MobileButtonsSide = "Left",
-        UnlockMouseWhileOpen = true
+        UnlockMouseWhileOpen = true,
     },
     Toggle = {
         Text = "Toggle",
@@ -946,18 +950,34 @@ function Library:GiveSignal(Connection: RBXScriptConnection)
 end
 
 function IsValidCustomIcon(Icon: string)
-    return typeof(Icon) == "string" and (Icon:match("rbxasset") or Icon:match("roblox%.com/asset/%?id=") or Icon:match("rbxthumb://type="))
+    return typeof(Icon) == "string"
+        and (Icon:match("rbxasset") or Icon:match("roblox%.com/asset/%?id=") or Icon:match("rbxthumb://type="))
 end
 
+type Icon = {
+    Url: string,
+    Id: number,
+    IconName: string,
+    ImageRectOffset: Vector2,
+    ImageRectSize: Vector2,
+}
+
+type IconModule = {
+    Icons: { string },
+    GetAsset: (Name: string) -> Icon?,
+}
+
 local FetchIcons, Icons = pcall(function()
-    return loadstring(
+    return (loadstring(
         game:HttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua")
-    )()
+    ) :: () -> IconModule)()
 end)
+
 function Library:GetIcon(IconName: string)
     if not FetchIcons then
         return
     end
+
     local Success, Icon = pcall(Icons.GetAsset, IconName)
     if not Success then
         return
@@ -973,7 +993,7 @@ function Library:GetCustomIcon(IconName: string)
             Url = IconName,
             ImageRectOffset = Vector2.zero,
             ImageRectSize = Vector2.zero,
-            Custom = true
+            Custom = true,
         }
     end
 end
@@ -1109,7 +1129,7 @@ local ModalElement = New("TextButton", {
     AnchorPoint = Vector2.zero,
     Text = "",
     ZIndex = -999,
-    Parent = ScreenGui
+    Parent = ScreenGui,
 })
 
 --// Cursor
@@ -1353,6 +1373,7 @@ function Library:MakeLine(Frame: GuiObject, Info)
         BackgroundColor3 = "OutlineColor",
         Position = Info.Position,
         Size = Info.Size,
+        ZIndex = Info.ZIndex or 1,
         Parent = Frame,
     })
 
@@ -1832,428 +1853,407 @@ local ArrowIcon = Library:GetIcon("chevron-up")
 local ResizeIcon = Library:GetIcon("move-diagonal-2")
 local KeyIcon = Library:GetIcon("key")
 
+function Library:SetIconModule(module: IconModule)
+    FetchIcons = true
+    Icons = module
+
+    -- Top ten fixes 🚀
+    CheckIcon = Library:GetIcon("check")
+    ArrowIcon = Library:GetIcon("chevron-up")
+    ResizeIcon = Library:GetIcon("move-diagonal-2")
+    KeyIcon = Library:GetIcon("key")
+end
+
 local BaseAddons = {}
 do
     local Funcs = {}
 
     function Funcs:AddKeyPicker(Idx, Info)
-        local ParentObj = self;
-        local ToggleLabel = self.TextLabel;
-        --local Container = self.Container;
+        Info = Library:Validate(Info, Templates.KeyPicker)
 
-        assert(Info.Default, string.format('AddKeyPicker (IDX: %s): Missing default value.', tostring(Idx)));
+        local ParentObj = self
+        local ToggleLabel = ParentObj.TextLabel
 
         local KeyPicker = {
-            Value = nil;
-            Toggled = false;
-            Mode = Info.Mode or 'Toggle'; -- Always, Toggle, Hold, Press
-            Type = 'KeyPicker';
-            Callback = Info.Callback or function(Value) end;
-            ChangedCallback = Info.ChangedCallback or function(New) end;
-            SyncToggleState = Info.SyncToggleState or false;
-        };
+            Text = Info.Text,
 
-        local SpecialKeys = {
-            ["MB1"] = Enum.UserInputType.MouseButton1,
-            ["MB2"] = Enum.UserInputType.MouseButton2,
-            ["MB3"] = Enum.UserInputType.MouseButton3
-        }
+            Value = Info.Default, -- Key
+            Modifiers = Info.DefaultModifiers, -- Modifiers
+            DisplayValue = Info.Default, -- Picker Text
 
-        local SpecialKeysInput = {
-            [Enum.UserInputType.MouseButton1] = "MB1",
-            [Enum.UserInputType.MouseButton2] = "MB2",
-            [Enum.UserInputType.MouseButton3] = "MB3"
+            Toggled = false,
+            Mode = Info.Mode,
+            SyncToggleState = Info.SyncToggleState,
+
+            Callback = Info.Callback,
+            ChangedCallback = Info.ChangedCallback,
+            Changed = Info.Changed,
+            Clicked = Info.Clicked,
+
+            Type = "KeyPicker",
         }
 
         if KeyPicker.Mode == "Press" then
             assert(ParentObj.Type == "Label", "KeyPicker with the mode 'Press' can be only applied on Labels.")
-            
+
             KeyPicker.SyncToggleState = false
             Info.Modes = { "Press" }
             Info.Mode = "Press"
         end
 
-       
+        local Picking = false
 
-        local PickOuter = New('Frame', {
-            BackgroundColor3 = Color3.new(0, 0, 0);
-            BorderColor3 = Color3.new(0, 0, 0);
-            Size = UDim2.new(0, 28, 0, 15);
-            ZIndex = 6;
-            Parent = ToggleLabel;
-        });
+        -- Special Keys
+        local SpecialKeys = {
+            ["MB1"] = Enum.UserInputType.MouseButton1,
+            ["MB2"] = Enum.UserInputType.MouseButton2,
+            ["MB3"] = Enum.UserInputType.MouseButton3,
+        }
 
-        local PickInner = New('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, 0, 1, 0);
-            ZIndex = 7;
-            Parent = PickOuter;
-        });
+        local SpecialKeysInput = {
+            [Enum.UserInputType.MouseButton1] = "MB1",
+            [Enum.UserInputType.MouseButton2] = "MB2",
+            [Enum.UserInputType.MouseButton3] = "MB3",
+        }
 
-        Library:AddToRegistry(PickInner, {
-            BackgroundColor3 = 'BackgroundColor';
-            BorderColor3 = 'OutlineColor';
-        });
+        -- Modifiers
+        local Modifiers = {
+            ["LAlt"] = Enum.KeyCode.LeftAlt,
+            ["RAlt"] = Enum.KeyCode.RightAlt,
 
-        local DisplayLabel = NewLabel({
-            Size = UDim2.new(1, 0, 1, 0);
-            TextSize = 13;
-            Text = Info.Default;
-            TextWrapped = true;
-            ZIndex = 8;
-            Parent = PickInner;
-        });
+            ["LCtrl"] = Enum.KeyCode.LeftControl,
+            ["RCtrl"] = Enum.KeyCode.RightControl,
 
-        -- Keybinds Text
-        local KeybindsToggle = {}
-        do
-            local KeybindsToggleContainer = New('Frame', {
-                BackgroundTransparency = 1;
-                Size = UDim2.new(1, 0, 0, 18);
-                Visible = false;
-                ZIndex = 110;
-                Parent = Library.KeybindContainer;
-            });
+            ["LShift"] = Enum.KeyCode.LeftShift,
+            ["RShift"] = Enum.KeyCode.RightShift,
 
-            local KeybindsToggleOuter = New('Frame', {
-                BackgroundColor3 = Color3.new(0, 0, 0);
-                BorderColor3 = Color3.new(0, 0, 0);
-                Size = UDim2.new(0, 13, 0, 13);
-                Position = UDim2.new(0, 0, 0, 6);
-                Visible = true;
-                ZIndex = 110;
-                Parent = KeybindsToggleContainer;
-            });
+            ["Tab"] = Enum.KeyCode.Tab,
+            ["CapsLock"] = Enum.KeyCode.CapsLock,
+        }
 
-            Library:AddToRegistry(KeybindsToggleOuter, {
-                BorderColor3 = 'Black';
-            });
+        local ModifiersInput = {
+            [Enum.KeyCode.LeftAlt] = "LAlt",
+            [Enum.KeyCode.RightAlt] = "RAlt",
 
-            local KeybindsToggleInner = New('Frame', {
-                BackgroundColor3 = Library.MainColor;
-                BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Inset;
-                Size = UDim2.new(1, 0, 1, 0);
-                ZIndex = 111;
-                Parent = KeybindsToggleOuter;
-            });
+            [Enum.KeyCode.LeftControl] = "LCtrl",
+            [Enum.KeyCode.RightControl] = "RCtrl",
 
-            Library:AddToRegistry(KeybindsToggleInner, {
-                BackgroundColor3 = 'MainColor';
-                BorderColor3 = 'OutlineColor';
-            });
+            [Enum.KeyCode.LeftShift] = "LShift",
+            [Enum.KeyCode.RightShift] = "RShift",
 
-            local KeybindsToggleLabel = NewLabel({
-                BackgroundTransparency = 1;
-                Size = UDim2.new(0, 216, 1, 0);
-                Position = UDim2.new(1, 6, 0, -1);
-                TextSize = 14;
-                Text = "";
-                TextXAlignment = Enum.TextXAlignment.Left;
-                ZIndex = 111;
-                Parent = KeybindsToggleInner;
-            });
+            [Enum.KeyCode.Tab] = "Tab",
+            [Enum.KeyCode.CapsLock] = "CapsLock",
+        }
 
-            New('UIListLayout', {
-                Padding = UDim.new(0, 4);
-                FillDirection = Enum.FillDirection.Horizontal;
-                HorizontalAlignment = Enum.HorizontalAlignment.Right;
-                VerticalAlignment = Enum.VerticalAlignment.Center;
-                SortOrder = Enum.SortOrder.LayoutOrder;
-                Parent = KeybindsToggleLabel;
-            });
-
-            local KeybindsToggleRegion = New('Frame', {
-                BackgroundTransparency = 1;
-                Size = UDim2.new(0, 170, 1, 0);
-                ZIndex = 113;
-                Parent = KeybindsToggleOuter;
-            });
-
-            Library:OnHighlight(KeybindsToggleRegion, KeybindsToggleOuter,
-                { BorderColor3 = 'AccentColor' },
-                { BorderColor3 = 'Black' },
-                function()
-                    return true
-                end
-            );
-
-            function KeybindsToggle:Display(State)
-                KeybindsToggleInner.BackgroundColor3 = State and Library.AccentColor or Library.MainColor;
-                KeybindsToggleInner.BorderColor3 = State and Library.AccentColorDark or Library.OutlineColor;
-                KeybindsToggleLabel.TextColor3 = State and Library.AccentColor or Library.FontColor;
-
-                Library.RegistryMap[KeybindsToggleInner].Properties.BackgroundColor3 = State and 'AccentColor' or 'MainColor';
-                Library.RegistryMap[KeybindsToggleInner].Properties.BorderColor3 = State and 'AccentColorDark' or 'OutlineColor';
-                Library.RegistryMap[KeybindsToggleLabel].Properties.TextColor3 = State and 'AccentColor' or 'FontColor';
-            end;
-
-            function KeybindsToggle:SetText(Text)
-                KeybindsToggleLabel.Text = Text
-            end
-
-            function KeybindsToggle:SetVisibility(bool)
-                KeybindsToggleContainer.Visible = bool
-            end
-
-            function KeybindsToggle:SetNormal(bool)
-                KeybindsToggle.Normal = bool
-
-                KeybindsToggleOuter.BackgroundTransparency = if KeybindsToggle.Normal then 1 else 0;
-
-                KeybindsToggleInner.BackgroundTransparency = if KeybindsToggle.Normal then 1 else 0;
-                KeybindsToggleInner.BorderSizePixel = if KeybindsToggle.Normal then 0 else 1;
-
-                KeybindsToggleLabel.Position = if KeybindsToggle.Normal then UDim2.new(1, -13, 0, -1) else UDim2.new(1, 6, 0, -1);
-            end
-
-            Library:GiveSignal(KeybindsToggleRegion.InputBegan:Connect(function(Input)
-                if KeybindsToggle.Normal then return end
-                                        
-                if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
-                    KeyPicker.Toggled = not KeyPicker.Toggled;
-                    KeyPicker:DoClick();
-                end;
-            end));
-
-            KeybindsToggle.Loaded = true;
-        end;
-
-        local ModeSelectOuter = New('Frame', {
-            BorderColor3 = Color3.new(0, 0, 0);
-            BackgroundTransparency = 1;
-            Size = UDim2.new(0, 80, 0, 0);
-            Visible = false;
-            ZIndex = 14;
-            Parent = ScreenGui;
-        });
-
-        local function UpdateMenuOuterPos()
-            ModeSelectOuter.Position = UDim2.fromOffset(ToggleLabel.AbsolutePosition.X + ToggleLabel.AbsoluteSize.X + 4, ToggleLabel.AbsolutePosition.Y);
+        local IsModifierInput = function(Input)
+            return Input.UserInputType == Enum.UserInputType.Keyboard and ModifiersInput[Input.KeyCode] ~= nil
         end
 
-        UpdateMenuOuterPos();
-        ToggleLabel:GetPropertyChangedSignal('AbsolutePosition'):Connect(UpdateMenuOuterPos);
+        local GetActiveModifiers = function()
+            local ActiveModifiers = {}
 
-        local ModeSelectInner = New('Frame', {
-            BackgroundColor3 = Library.BackgroundColor;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, 0, 0, 3);
-            ZIndex = 15;
-            Parent = ModeSelectOuter;
-        });
+            for Name, Input in Modifiers do
+                if table.find(ActiveModifiers, Name) then
+                    continue
+                end
+                if not UserInputService:IsKeyDown(Input) then
+                    continue
+                end
 
-        Library:AddToRegistry(ModeSelectInner, {
-            BackgroundColor3 = 'BackgroundColor';
-            BorderColor3 = 'OutlineColor';
-        });
+                table.insert(ActiveModifiers, Name)
+            end
 
-        New('UIListLayout', {
-            FillDirection = Enum.FillDirection.Vertical;
-            SortOrder = Enum.SortOrder.LayoutOrder;
-            Parent = ModeSelectInner;
-        });
+            return ActiveModifiers
+        end
 
-        local Modes = Info.Modes or { 'Always', 'Toggle', 'Hold' };
-        local ModeButtons = {};
-        local UnbindButton = {};
+        local AreModifiersHeld = function(Required)
+            if not (typeof(Required) == "table" and GetTableSize(Required) > 0) then
+                return true
+            end
 
-        for Idx, Mode in next, Modes do
-            local ModeButton = {};
+            local ActiveModifiers = GetActiveModifiers()
+            local Holding = true
 
-            local Label = NewLabel({
-                Active = false;
-                Size = UDim2.new(1, 0, 0, 15);
-                TextSize = 13;
-                Text = Mode;
-                ZIndex = 16;
-                Parent = ModeSelectInner;
-            });
-            ModeSelectInner.Size = ModeSelectInner.Size + UDim2.new(0, 0, 0, 15)
-            ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 18)
+            for _, Name in Required do
+                if table.find(ActiveModifiers, Name) then
+                    continue
+                end
+
+                Holding = false
+                break
+            end
+
+            return Holding
+        end
+
+        local IsInputDown = function(Input)
+            if not Input then
+                return false
+            end
+
+            if SpecialKeysInput[Input.UserInputType] ~= nil then
+                return UserInputService:IsMouseButtonPressed(Input.UserInputType)
+                    and not UserInputService:GetFocusedTextBox()
+            elseif Input.UserInputType == Enum.UserInputType.Keyboard then
+                return UserInputService:IsKeyDown(Input.KeyCode) and not UserInputService:GetFocusedTextBox()
+            else
+                return false
+            end
+        end
+
+        local ConvertToInputModifiers = function(CurrentModifiers)
+            local InputModifiers = {}
+
+            for _, name in CurrentModifiers do
+                table.insert(InputModifiers, Modifiers[name])
+            end
+
+            return InputModifiers
+        end
+
+        local VerifyModifiers = function(CurrentModifiers)
+            if typeof(CurrentModifiers) ~= "table" then
+                return {}
+            end
+
+            local ValidModifiers = {}
+
+            for _, name in CurrentModifiers do
+                if not Modifiers[name] then
+                    continue
+                end
+
+                table.insert(ValidModifiers, name)
+            end
+
+            return ValidModifiers
+        end
+
+        KeyPicker.Modifiers = VerifyModifiers(KeyPicker.Modifiers) -- Verify default modifiers
+
+        local Picker = New("TextButton", {
+            BackgroundColor3 = "MainColor",
+            BorderColor3 = "OutlineColor",
+            BorderSizePixel = 1,
+            Size = UDim2.fromOffset(18, 18),
+            Text = KeyPicker.Value,
+            TextSize = 14,
+            Parent = ToggleLabel,
+        })
+
+        local KeybindsToggle = { Normal = KeyPicker.Mode ~= "Toggle" }
+        do
+            local Holder = New("TextButton", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 16),
+                Text = "",
+                Visible = not Info.NoUI,
+                Parent = Library.KeybindContainer,
+            })
+
+            local Label = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Text = "",
+                TextSize = 14,
+                TextTransparency = 0.5,
+                Parent = Holder,
+
+                DPIExclude = {
+                    Size = true,
+                },
+            })
+
+            local Checkbox = New("Frame", {
+                BackgroundColor3 = "MainColor",
+                Size = UDim2.fromOffset(14, 14),
+                SizeConstraint = Enum.SizeConstraint.RelativeYY,
+                Parent = Holder,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, Library.CornerRadius / 2),
+                Parent = Checkbox,
+            })
+            New("UIStroke", {
+                Color = "OutlineColor",
+                Parent = Checkbox,
+            })
+
+            local CheckImage = New("ImageLabel", {
+                Image = CheckIcon and CheckIcon.Url or "",
+                ImageColor3 = "FontColor",
+                ImageRectOffset = CheckIcon and CheckIcon.ImageRectOffset or Vector2.zero,
+                ImageRectSize = CheckIcon and CheckIcon.ImageRectSize or Vector2.zero,
+                ImageTransparency = 1,
+                Position = UDim2.fromOffset(2, 2),
+                Size = UDim2.new(1, -4, 1, -4),
+                Parent = Checkbox,
+            })
+
+            function KeybindsToggle:Display(State)
+                Label.TextTransparency = State and 0 or 0.5
+                CheckImage.ImageTransparency = State and 0 or 1
+            end
+
+            function KeybindsToggle:SetText(Text)
+                local X = Library:GetTextBounds(Text, Label.FontFace, Label.TextSize)
+                Label.Text = Text
+                Label.Size = UDim2.new(0, X, 1, 0)
+            end
+
+            function KeybindsToggle:SetVisibility(Visibility)
+                Holder.Visible = Visibility
+            end
+
+            function KeybindsToggle:SetNormal(Normal)
+                KeybindsToggle.Normal = Normal
+
+                Holder.Active = not Normal
+                Label.Position = Normal and UDim2.fromOffset(0, 0) or UDim2.fromOffset(22 * Library.DPIScale, 0)
+                Checkbox.Visible = not Normal
+            end
+
+            Holder.MouseButton1Click:Connect(function()
+                if KeybindsToggle.Normal then
+                    return
+                end
+
+                KeyPicker.Toggled = not KeyPicker.Toggled
+                KeyPicker:DoClick()
+            end)
+
+            KeybindsToggle.Holder = Holder
+            KeybindsToggle.Label = Label
+            KeybindsToggle.Checkbox = Checkbox
+            KeybindsToggle.Loaded = true
+            table.insert(Library.KeybindToggles, KeybindsToggle)
+        end
+
+        local MenuTable = Library:AddContextMenu(Picker, UDim2.fromOffset(62, 0), function()
+            return { Picker.AbsoluteSize.X + 1.5, 0.5 }
+        end, 1)
+        KeyPicker.Menu = MenuTable
+
+        local ModeButtons = {}
+        for _, Mode in pairs(Info.Modes) do
+            local ModeButton = {}
+
+            local Button = New("TextButton", {
+                BackgroundColor3 = "MainColor",
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 21),
+                Text = Mode,
+                TextSize = 14,
+                TextTransparency = 0.5,
+                Parent = MenuTable.Menu,
+            })
 
             function ModeButton:Select()
-                for _, Button in next, ModeButtons do
-                    Button:Deselect();
-                end;
+                for _, Button in pairs(ModeButtons) do
+                    Button:Deselect()
+                end
 
-                KeyPicker.Mode = Mode;
+                KeyPicker.Mode = Mode
 
-                Label.TextColor3 = Library.AccentColor;
-                Library.RegistryMap[Label].Properties.TextColor3 = 'AccentColor';
+                Button.BackgroundTransparency = 0
+                Button.TextTransparency = 0
 
-                ModeSelectOuter.Visible = false;
-            end;
+                MenuTable:Close()
+            end
 
             function ModeButton:Deselect()
-                KeyPicker.Mode = nil;
+                KeyPicker.Mode = nil
 
-                Label.TextColor3 = Library.FontColor;
-                Library.RegistryMap[Label].Properties.TextColor3 = 'FontColor';
-            end;
+                Button.BackgroundTransparency = 1
+                Button.TextTransparency = 0.5
+            end
 
-            Label.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    ModeButton:Select();
-                end;
-            end);
+            Button.MouseButton1Click:Connect(function()
+                ModeButton:Select()
+            end)
 
-            if Mode == KeyPicker.Mode then
-                ModeButton:Select();
-            end;
+            if KeyPicker.Mode == Mode then
+                ModeButton:Select()
+            end
 
-            ModeButtons[Mode] = ModeButton;
-        end;
+            ModeButtons[Mode] = ModeButton
+        end
 
-        -- Create Unbind button --
-        do
-            local UnbindInner = New('Frame', {
-                BackgroundColor3 = Library.BackgroundColor;
-                BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Inset;
-                Position = UDim2.new(0, 0, 0, ModeSelectInner.Size.Y.Offset + 3);
-                Size = UDim2.new(1, 0, 0, 18);
-                ZIndex = 15;
-                Parent = ModeSelectOuter;
-            });
+        function KeyPicker:Display()
+            if Library.Unloaded then
+                return
+            end
 
-            ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 18)
-
-            Library:AddToRegistry(UnbindInner, {
-                BackgroundColor3 = 'BackgroundColor';
-                BorderColor3 = 'OutlineColor';
-            });
-
-            local UnbindLabel = NewLabel({
-                Active = false;
-                Size = UDim2.new(1, 0, 0, 15);
-                TextSize = 13;
-                Text = "Unbind Key";
-                ZIndex = 16;
-                Parent = UnbindInner;
-            });
-
-            function UnbindButton:UnbindKey()
-                KeyPicker:SetValue({ nil, KeyPicker.Mode })
-                ModeSelectOuter.Visible = false;
-            end;
-
-            UnbindLabel.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    UnbindButton:UnbindKey();
-                end;
-            end);
+            local X, Y = Library:GetTextBounds(
+                KeyPicker.DisplayValue,
+                Picker.FontFace,
+                Picker.TextSize,
+                ToggleLabel.AbsoluteSize.X
+            )
+            Picker.Text = KeyPicker.DisplayValue
+            Picker.Size = UDim2.fromOffset(X + 9 * Library.DPIScale, Y + 4 * Library.DPIScale)
         end
 
         function KeyPicker:Update()
-            if Info.NoUI then
-                return;
-            end;
+            KeyPicker:Display()
 
-            local State = KeyPicker:GetState();
-            local ShowToggle = Library.ShowToggleFrameInKeybinds and KeyPicker.Mode == 'Toggle';
+            if Info.NoUI then
+                return
+            end
+
+            if KeyPicker.Mode == "Toggle" and ParentObj.Type == "Toggle" and ParentObj.Disabled then
+                KeybindsToggle:SetVisibility(false)
+                return
+            end
+
+            local State = KeyPicker:GetState()
+            local ShowToggle = Library.ShowToggleFrameInKeybinds and KeyPicker.Mode == "Toggle"
 
             if KeybindsToggle.Loaded then
-                KeybindsToggle:SetNormal(not ShowToggle)
-
-                KeybindsToggle:SetVisibility(true);
-                KeybindsToggle:SetText(string.format('[%s] %s (%s)', tostring(KeyPicker.Value), Info.Text, KeyPicker.Mode));
-                KeybindsToggle:Display(State);
-            end
-
-            local YSize = 0
-            local XSize = 0
-
-            for _, Frame in next, Library.KeybindContainer:GetChildren() do
-                if Frame:IsA('Frame') and Frame.Visible then
-                    YSize = YSize + 18;
-                    local Label = Frame:FindFirstChild("TextLabel", true)
-                    if not Label then continue end
-                    
-                    local LabelSize = Label.TextBounds.X + 20
-                    if (LabelSize > XSize) then
-                        XSize = LabelSize;
-                    end
-                end;
-            end;
-
-            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 220), 0, (YSize + 23 + 6) * DPIScale);
-            UpdateMenuOuterPos();
-        end;
-
-        function KeyPicker:GetState()
-            if KeyPicker.Mode == 'Always' then
-                return true;
-            
-            elseif KeyPicker.Mode == 'Hold' then
-                if KeyPicker.Value == 'None' then
-                    return false;
+                if ShowToggle then
+                    KeybindsToggle:SetNormal(false)
+                else
+                    KeybindsToggle:SetNormal(true)
                 end
 
-                local Key = KeyPicker.Value;
-
-                if SpecialKeys[Key] ~= nil then
-                    return InputService:IsMouseButtonPressed(SpecialKeys[Key]) and not InputService:GetFocusedTextBox();
-                else
-                    return InputService:IsKeyDown(Enum.KeyCode[KeyPicker.Value]) and not InputService:GetFocusedTextBox();
-                end;
-            else
-                return KeyPicker.Toggled;
-            end;
-        end;
-
-        function KeyPicker:SetValue(Data)
-            local Key, Mode = Data[1], Data[2];
-
-            local IsKeyValid, UserInputType = pcall(function() 
-                if SpecialKeys[Key] == nil then 
-                    return Enum.KeyCode[Key];
-                end; 
-
-                return SpecialKeys[Key]; 
-            end);
-
-            if Key == nil then
-                DisplayLabel.Text = "None";
-                KeyPicker.Value = "None";
-
-            elseif IsKeyValid  then
-                DisplayLabel.Text = Key;
-                KeyPicker.Value = Key;
-
-            else
-                DisplayLabel.Text = "Unknown";
-                KeyPicker.Value = "Unknown";
+                KeybindsToggle:SetText(("[%s] %s (%s)"):format(KeyPicker.DisplayValue, KeyPicker.Text, KeyPicker.Mode))
+                KeybindsToggle:SetVisibility(true)
+                KeybindsToggle:Display(State)
             end
 
-            if Mode ~= nil and ModeButtons[Mode] ~= nil then 
-                ModeButtons[Mode]:Select(); 
-            end;
-
-            PickOuter.Size = UDim2.new(0, 999999, 0, 18);
-            RunService.RenderStepped:Wait();
-            PickOuter.Size = UDim2.new(0, math.max(28, DisplayLabel.TextBounds.X + 8), 0, 18);
-
-            KeyPicker:Update();
-
-            Library:SafeCallback(KeyPicker.ChangedCallback, UserInputType)
-            Library:SafeCallback(KeyPicker.Changed, UserInputType)
-        end;
-
-        function KeyPicker:OnClick(Callback)
-            KeyPicker.Clicked = Callback
+            Library:UpdateKeybindFrame()
         end
 
-        function KeyPicker:OnChanged(Callback)
-            KeyPicker.Changed = Callback
-            Callback(KeyPicker.Value)
+        function KeyPicker:GetState()
+            if KeyPicker.Mode == "Always" then
+                return true
+            elseif KeyPicker.Mode == "Hold" then
+                local Key = KeyPicker.Value
+                if Key == "None" then
+                    return false
+                end
+
+                if not AreModifiersHeld(KeyPicker.Modifiers) then
+                    return false
+                end
+
+                if SpecialKeys[Key] ~= nil then
+                    return UserInputService:IsMouseButtonPressed(SpecialKeys[Key])
+                        and not UserInputService:GetFocusedTextBox()
+                else
+                    return UserInputService:IsKeyDown(Enum.KeyCode[Key]) and not UserInputService:GetFocusedTextBox()
+                end
+            else
+                return KeyPicker.Toggled
+            end
         end
 
-        if ParentObj.Addons then
-            table.insert(ParentObj.Addons, KeyPicker)
+        function KeyPicker:OnChanged(Func)
+            KeyPicker.Changed = Func
+        end
+
+        function KeyPicker:OnClick(Func)
+            KeyPicker.Clicked = Func
         end
 
         function KeyPicker:DoClick()
@@ -2265,8 +2265,8 @@ do
                 KeyPicker.Toggled = true
             end
 
-            if ParentObj.Type == 'Toggle' and KeyPicker.SyncToggleState then
-                ParentObj:SetValue(not ParentObj.Value)
+            if ParentObj.Type == "Toggle" and KeyPicker.SyncToggleState then
+                ParentObj:SetValue(KeyPicker.Toggled)
             end
 
             Library:SafeCallback(KeyPicker.Callback, KeyPicker.Toggled)
@@ -2277,125 +2277,156 @@ do
             end
         end
 
-        function KeyPicker:SetModePickerVisibility(bool)
-            ModeSelectOuter.Visible = bool;
-        end
+        function KeyPicker:SetValue(Data)
+            local Key, Mode, Modifiers = Data[1], Data[2], Data[3]
 
-        function KeyPicker:GetModePickerVisibility()
-            return ModeSelectOuter.Visible;
-        end
-
-        local Picking = false;
-
-        PickOuter.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                Picking = true;
-
-                DisplayLabel.Text = '';
-
-                local Break;
-                local Text = '';
-
-                task.spawn(function()
-                    while (not Break) do
-                        if Text == '...' then
-                            Text = '';
-                        end;
-
-                        Text = Text .. '.';
-                        DisplayLabel.Text = Text;
-
-                        task.wait(0.4);
-                    end;
-                end);
-
-                task.wait(0.2);
-
-                InputService.InputBegan:Once(function(Input)
-                    local Key;
-
-                    if SpecialKeysInput[Input.UserInputType] ~= nil then
-                        Key = SpecialKeysInput[Input.UserInputType];
-                        
-                    elseif Input.UserInputType == Enum.UserInputType.Keyboard then
-                        Key = Input.KeyCode == Enum.KeyCode.Escape and "None" or Input.KeyCode.Name
-                    end
-
-                    Break = true;
-                    KeyPicker:SetValue({ Key, KeyPicker.Mode })
-
-                    task.wait();
-                    Picking = false;
-                end);
-
-            elseif Input.UserInputType == Enum.UserInputType.MouseButton2 and not Library:MouseIsOverOpenedFrame() then
-                local visible = KeyPicker:GetModePickerVisibility()
-                
-                if visible == false then
-                    for _, option in next, Options do
-                        if option.Type == "KeyPicker" then
-                            option:SetModePickerVisibility(false)
-                        end
-                    end
+            local IsKeyValid, UserInputType = pcall(function()
+                if Key == "None" then
+                    Key = nil
+                    return nil
                 end
 
-                KeyPicker:SetModePickerVisibility(not visible)
-            end;
+                if SpecialKeys[Key] == nil then
+                    return Enum.KeyCode[Key]
+                end
+
+                return SpecialKeys[Key]
+            end)
+
+            if Key == nil then
+                KeyPicker.Value = "None"
+            elseif IsKeyValid then
+                KeyPicker.Value = Key
+            else
+                KeyPicker.Value = "Unknown"
+            end
+
+            KeyPicker.Modifiers =
+                VerifyModifiers(if typeof(Modifiers) == "table" then Modifiers else KeyPicker.Modifiers)
+            KeyPicker.DisplayValue = if GetTableSize(KeyPicker.Modifiers) > 0
+                then (table.concat(KeyPicker.Modifiers, " + ") .. " + " .. KeyPicker.Value)
+                else KeyPicker.Value
+
+            if ModeButtons[Mode] then
+                ModeButtons[Mode]:Select()
+            end
+
+            local NewModifiers = ConvertToInputModifiers(KeyPicker.Modifiers)
+            Library:SafeCallback(KeyPicker.ChangedCallback, UserInputType, NewModifiers)
+            Library:SafeCallback(KeyPicker.Changed, UserInputType, NewModifiers)
+
+            KeyPicker:Update()
+        end
+
+        function KeyPicker:SetText(Text)
+            KeybindsToggle:SetText(Text)
+            KeyPicker:Update()
+        end
+
+        Picker.MouseButton1Click:Connect(function()
+            if Picking then
+                return
+            end
+
+            Picking = true
+
+            Picker.Text = "..."
+            Picker.Size = UDim2.fromOffset(29 * Library.DPIScale, 18 * Library.DPIScale)
+
+            -- Wait for an non modifier key --
+            local Input
+            repeat
+                Input = UserInputService.InputBegan:Wait()
+                if UserInputService:GetFocusedTextBox() then
+                    Picking = false
+                    KeyPicker:Update()
+                    return
+                end
+            until not IsModifierInput(Input)
+
+            local Key = "Unknown"
+            local ActiveModifiers = if Input.KeyCode == Enum.KeyCode.Escape then {} else GetActiveModifiers()
+
+            if SpecialKeysInput[Input.UserInputType] ~= nil then
+                Key = SpecialKeysInput[Input.UserInputType]
+            elseif Input.UserInputType == Enum.UserInputType.Keyboard then
+                Key = Input.KeyCode == Enum.KeyCode.Escape and "None" or Input.KeyCode.Name
+            end
+
+            KeyPicker.Toggled = false
+            KeyPicker:SetValue({ Key, KeyPicker.Mode, ActiveModifiers })
+
+            -- RunService.RenderStepped:Wait()
+            repeat
+                task.wait()
+            until not IsInputDown(Input) or UserInputService:GetFocusedTextBox()
+            Picking = false
         end)
+        Picker.MouseButton2Click:Connect(MenuTable.Toggle)
 
-        Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
-            if KeyPicker.Value == "Unknown" then return end
-        
-            if (not Picking) and (not InputService:GetFocusedTextBox()) then
-                local Key = KeyPicker.Value;
-                local HoldingKey = false;
+        Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObject)
+            if
+                KeyPicker.Mode == "Always"
+                or KeyPicker.Value == "Unknown"
+                or KeyPicker.Value == "None"
+                or Picking
+                or UserInputService:GetFocusedTextBox()
+            then
+                return
+            end
 
-                if Input.UserInputType == Enum.UserInputType.Keyboard then
-                    if Input.KeyCode.Name == Key then
-                        HoldingKey = true;
-                    end;
-                elseif SpecialKeysInput[Input.UserInputType] == Key then
-                    HoldingKey = true;
-                end;
+            local Key = KeyPicker.Value
+            local HoldingModifiers = AreModifiersHeld(KeyPicker.Modifiers)
+            local HoldingKey = false
 
-                if KeyPicker.Mode == 'Toggle' then
-                    if HoldingKey then
-                        KeyPicker.Toggled = not KeyPicker.Toggled;
-                        KeyPicker:DoClick();
-                    end;
-                elseif KeyPicker.Mode == "Press" then
-                    if HoldingKey then
-                        KeyPicker:DoClick();
-                    end;
-                end;
+            if
+                Key
+                and HoldingModifiers == true
+                and (
+                    SpecialKeysInput[Input.UserInputType] == Key
+                    or (Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Key)
+                )
+            then
+                HoldingKey = true
+            end
 
-                KeyPicker:Update();
-            end;
+            if KeyPicker.Mode == "Toggle" then
+                if HoldingKey then
+                    KeyPicker.Toggled = not KeyPicker.Toggled
+                    KeyPicker:DoClick()
+                end
+            elseif KeyPicker.Mode == "Press" then
+                if HoldingKey then
+                    KeyPicker:DoClick()
+                end
+            end
 
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                local AbsPos, AbsSize = ModeSelectOuter.AbsolutePosition, ModeSelectOuter.AbsoluteSize;
-
-                if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-                    or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
-
-                    KeyPicker:SetModePickerVisibility(false);
-                end;
-            end;
+            KeyPicker:Update()
         end))
 
-        Library:GiveSignal(InputService.InputEnded:Connect(function(Input)
-            if (not Picking) then
-                KeyPicker:Update();
-            end;
+        Library:GiveSignal(UserInputService.InputEnded:Connect(function()
+            if
+                KeyPicker.Value == "Unknown"
+                or KeyPicker.Value == "None"
+                or Picking
+                or UserInputService:GetFocusedTextBox()
+            then
+                return
+            end
+
+            KeyPicker:Update()
         end))
-        
-        KeyPicker:SetValue({ Info.Default, Info.Mode or 'Toggle' });
-        KeyPicker.DisplayFrame = PickOuter
 
-        Options[Idx] = KeyPicker;
+        KeyPicker:Update()
 
-        return self;
-    end;
+        if ParentObj.Addons then
+            table.insert(ParentObj.Addons, KeyPicker)
+        end
+
+        Options[Idx] = KeyPicker
+
+        return self
+    end
 
     local HueSequenceTable = {}
     for Hue = 0, 1, 0.1 do
@@ -3927,7 +3958,8 @@ do
                 DisplayLabel.Text = tostring(CustomDisplayText)
             else
                 if Info.Compact then
-                    DisplayLabel.Text = string.format("%s: %s%s%s", Slider.Text, Slider.Prefix, Slider.Value, Slider.Suffix)
+                    DisplayLabel.Text =
+                        string.format("%s: %s%s%s", Slider.Text, Slider.Prefix, Slider.Value, Slider.Suffix)
                 elseif Info.HideMax then
                     DisplayLabel.Text = string.format("%s%s%s", Slider.Prefix, Slider.Value, Slider.Suffix)
                 else
@@ -5401,7 +5433,7 @@ function Library:Notify(...)
     return Data
 end
 
-function NewWindow(WindowInfo)
+function Library:CreateWindow(WindowInfo)
     WindowInfo = Library:Validate(WindowInfo, Templates.Window)
     local ViewportSize: Vector2 = workspace.CurrentCamera.ViewportSize
     if RunService:IsStudio() and ViewportSize.X <= 5 and ViewportSize.Y <= 5 then
@@ -5438,6 +5470,161 @@ function NewWindow(WindowInfo)
     local ResizeButton
     local Tabs
     local Container
+    local ElementSizes = {
+        ["Loaded"] = false,
+        ["Elements"] = {
+            ["Line"] = {},
+            ["TitleHolder"] = {},
+            ["WindowIcon"] = {},
+            ["WindowTitle"] = {},
+            ["RightWrapper"] = {},
+            ["Tabs"] = {},
+            ["Container"] = {},
+            ["TabButtonUIPadding"] = {},
+            ["TabLabel"] = {},
+        },
+
+        [true] = {
+            ["Line"] = {
+                Position = UDim2.fromOffset(55, 0),
+            },
+
+            ["TitleHolder"] = {
+                Size = UDim2.new(0, 54, 1, 0),
+            },
+
+            ["WindowIcon"] = {
+                Visible = function(Element)
+                    return true
+                end,
+            },
+
+            ["WindowTitle"] = {
+                Visible = false,
+            },
+
+            ["RightWrapper"] = {
+                Position = UDim2.new(0, 54 + 8, 0.5, 0),
+                Size = UDim2.new(0.9, -37, 1, -16),
+            },
+
+            ["Tabs"] = {
+                Size = UDim2.new(0, 54, 1, -70),
+            },
+
+            ["Container"] = {
+                Size = UDim2.new(1, -55, 1, -70),
+            },
+
+            ["TabButtonUIPadding"] = {
+                PaddingBottom = UDim.new(0, 7),
+                PaddingLeft = UDim.new(0, 14),
+                PaddingRight = UDim.new(0, 14),
+                PaddingTop = UDim.new(0, 7),
+            },
+
+            ["TabLabel"] = {
+                Visible = false,
+            },
+        },
+
+        [false] = {
+            ["Line"] = {
+                Position = UDim2.fromScale(0.3, 0),
+            },
+
+            ["TitleHolder"] = {
+                Size = UDim2.fromScale(0.3, 1),
+            },
+
+            ["WindowIcon"] = {
+                Visible = function(Element)
+                    return WindowInfo.Icon ~= nil
+                end,
+            },
+
+            ["WindowTitle"] = {
+                Size = function(Element)
+                    local X = Library:GetTextBounds(
+                        Element.Text,
+                        Library.Scheme.Font,
+                        20,
+                        Element.Parent.AbsoluteSize.X - (WindowInfo.Icon and WindowInfo.IconSize.X.Offset + 6 or 0) - 12
+                    )
+                    return UDim2.new(0, X, 1, 0)
+                end,
+                Visible = true,
+            },
+
+            ["RightWrapper"] = {
+                Position = UDim2.new(0.3, 8, 0.5, 0),
+                Size = UDim2.new(0.7, -57, 1, -16),
+            },
+
+            ["Tabs"] = {
+                Size = UDim2.new(0.3, 0, 1, -70),
+            },
+
+            ["Container"] = {
+                Size = UDim2.new(0.7, -1, 1, -70),
+            },
+
+            ["TabButtonUIPadding"] = {
+                PaddingBottom = UDim.new(0, 11),
+                PaddingLeft = UDim.new(0, 12),
+                PaddingRight = UDim.new(0, 12),
+                PaddingTop = UDim.new(0, 11),
+            },
+
+            ["TabLabel"] = {
+                Visible = true,
+            },
+        },
+    }
+    local LoadingSizes = ElementSizes[WindowInfo.Compact]
+    local ToggleCompactDebounce = false
+    local ToggleCompactClickCount = 0
+    local ToggleCompact = function()
+        if not ElementSizes.Loaded then
+            return
+        end
+        if ToggleCompactDebounce then
+            return
+        end
+
+        ToggleCompactDebounce = true
+        WindowInfo.Compact = not WindowInfo.Compact
+
+        local Sizes = ElementSizes[WindowInfo.Compact]
+        for ElementName, Properties in Sizes do
+            local Elements = ElementSizes.Elements[ElementName]
+            for _, Element in Elements do
+                for PropertyName, PropertyValue in Properties do
+                    Element[PropertyName] = if typeof(PropertyValue) == "function"
+                        then PropertyValue(Element)
+                        else PropertyValue
+                end
+            end
+        end
+
+        for TabName, Tab in Library.Tabs do
+            Tab:RefreshSides()
+        end
+
+        task.delay(0.01, function()
+            ToggleCompactDebounce = false
+        end)
+    end
+    local DoubleClickToggleCompact = function()
+        ToggleCompactClickCount = ToggleCompactClickCount + 1
+        if ToggleCompactClickCount % 2 == 0 then
+            ToggleCompact()
+        end
+
+        task.wait(0.15)
+        ToggleCompactClickCount = math.max(0, ToggleCompactClickCount - 1)
+    end
+
     do
         Library.KeybindFrame, Library.KeybindContainer = Library:AddDraggableMenu("Keybinds")
         Library.KeybindFrame.AnchorPoint = Vector2.new(0, 0.5)
@@ -5448,11 +5635,12 @@ function NewWindow(WindowInfo)
             Size = false,
         })
 
-        MainFrame = New("Frame", {
+        MainFrame = New("TextButton", {
             BackgroundColor3 = function()
                 return Library:GetBetterColor(Library.Scheme.BackgroundColor, -1)
             end,
             Name = "Main",
+            Text = "",
             Position = WindowInfo.Position,
             Size = WindowInfo.Size,
             Visible = false,
@@ -5467,14 +5655,19 @@ function NewWindow(WindowInfo)
             Parent = MainFrame,
         })
         do
+            table.insert(
+                ElementSizes.Elements["Line"],
+                Library:MakeLine(MainFrame, {
+                    Position = LoadingSizes["Line"].Position,
+                    Size = UDim2.new(0, 1, 1, -21),
+                    ZIndex = 2,
+                })
+            )
+
             local Lines = {
                 {
                     Position = UDim2.fromOffset(0, 48),
                     Size = UDim2.new(1, 0, 0, 1),
-                },
-                {
-                    Position = UDim2.fromScale(0.3, 0),
-                    Size = UDim2.new(0, 1, 1, -21),
                 },
                 {
                     AnchorPoint = Vector2.new(0, 1),
@@ -5516,7 +5709,7 @@ function NewWindow(WindowInfo)
         --// Title
         local TitleHolder = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.fromScale(0.3, 1),
+            Size = LoadingSizes["TitleHolder"].Size,
             Parent = TopBar,
         })
         New("UIListLayout", {
@@ -5526,41 +5719,67 @@ function NewWindow(WindowInfo)
             Padding = UDim.new(0, 6),
             Parent = TitleHolder,
         })
+        table.insert(ElementSizes.Elements["TitleHolder"], TitleHolder)
 
+        local WindowIcon
         if WindowInfo.Icon then
-            New("ImageLabel", {
-                Image = if tonumber(WindowInfo.Icon) then string.format("rbxassetid://%d", WindowInfo.Icon) else WindowInfo.Icon,
+            WindowIcon = New("ImageButton", {
+                Image = if tonumber(WindowInfo.Icon)
+                    then string.format("rbxassetid://%d", WindowInfo.Icon)
+                    else WindowInfo.Icon,
                 Size = WindowInfo.IconSize,
+                BackgroundTransparency = 1,
+                Parent = TitleHolder,
+            })
+        else
+            WindowIcon = New("TextButton", {
+                Text = WindowInfo.Title:sub(1, 1),
+                TextScaled = true,
+                Size = WindowInfo.IconSize,
+                BackgroundTransparency = 1,
                 Parent = TitleHolder,
             })
         end
+        WindowIcon.Visible = LoadingSizes["WindowIcon"].Visible(WindowIcon)
 
-        local X = Library:GetTextBounds(
-            WindowInfo.Title,
-            Library.Scheme.Font,
-            20,
-            TitleHolder.AbsoluteSize.X - (WindowInfo.Icon and WindowInfo.IconSize.X.Offset + 6 or 0) - 12
-        )
-        New("TextLabel", {
+        if not WindowInfo.DisableCompactChanges then
+            Library:GiveSignal(WindowIcon.MouseButton1Click:Connect(DoubleClickToggleCompact))
+            Library:GiveSignal(WindowIcon.TouchTap:Connect(DoubleClickToggleCompact))
+        end
+
+        table.insert(ElementSizes.Elements["WindowIcon"], WindowIcon)
+
+        local WindowTitle = New("TextButton", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(0, X, 1, 0),
             Text = WindowInfo.Title,
             TextSize = 20,
+            Visible = LoadingSizes["WindowTitle"].Visible,
             Parent = TitleHolder,
         })
+        WindowTitle.Size = if LoadingSizes["WindowTitle"].Size
+            then LoadingSizes["WindowTitle"].Size(WindowTitle)
+            else UDim2.fromScale(0, 1)
+
+        if not WindowInfo.DisableCompactChanges then
+            Library:GiveSignal(WindowTitle.MouseButton1Click:Connect(DoubleClickToggleCompact))
+            Library:GiveSignal(WindowTitle.TouchTap:Connect(DoubleClickToggleCompact))
+        end
+
+        table.insert(ElementSizes.Elements["WindowTitle"], WindowTitle)
 
         --// Top Right Bar
         local RightWrapper = New("Frame", {
             BackgroundTransparency = 1,
             AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0.3, 8, 0.5, 0),
-            Size = UDim2.new(0.7, -57, 1, -16),
+            Position = LoadingSizes["RightWrapper"].Position,
+            Size = LoadingSizes["RightWrapper"].Size,
             Parent = TopBar,
         })
+        table.insert(ElementSizes.Elements["RightWrapper"], RightWrapper)
 
         New("UIListLayout", {
             FillDirection = Enum.FillDirection.Horizontal,
-            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
             VerticalAlignment = Enum.VerticalAlignment.Center,
             Padding = UDim.new(0, 8),
             Parent = RightWrapper,
@@ -5573,6 +5792,11 @@ function NewWindow(WindowInfo)
             Parent = RightWrapper,
         })
 
+        New("UIFlexItem", {
+            FlexMode = Enum.UIFlexMode.Grow,
+            Parent = CurrentTabInfo,
+        })
+
         New("UIListLayout", {
             FillDirection = Enum.FillDirection.Vertical,
             HorizontalAlignment = Enum.HorizontalAlignment.Left,
@@ -5582,7 +5806,7 @@ function NewWindow(WindowInfo)
 
         New("UIPadding", {
             PaddingBottom = UDim.new(0, 8),
-            PaddingLeft = UDim.new(0, 8),
+            PaddingLeft = UDim.new(0, 2),
             PaddingRight = UDim.new(0, 8),
             PaddingTop = UDim.new(0, 8),
             Parent = CurrentTabInfo,
@@ -5617,6 +5841,10 @@ function NewWindow(WindowInfo)
             TextScaled = true,
             Visible = not (WindowInfo.DisableSearch or false),
             Parent = RightWrapper,
+        })
+        New("UIFlexItem", {
+            FlexMode = Enum.UIFlexMode.Shrink,
+            Parent = SearchBox,
         })
         New("UICorner", {
             CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
@@ -5733,13 +5961,13 @@ function NewWindow(WindowInfo)
             CanvasSize = UDim2.fromScale(0, 0),
             Position = UDim2.fromOffset(0, 49),
             ScrollBarThickness = 0,
-            Size = UDim2.new(0.3, 0, 1, -70),
+            Size = LoadingSizes["Tabs"].Size,
             Parent = MainFrame,
         })
-
         New("UIListLayout", {
             Parent = Tabs,
         })
+        table.insert(ElementSizes.Elements["Tabs"], Tabs)
 
         --// Container \\--
         Container = New("Frame", {
@@ -5749,10 +5977,9 @@ function NewWindow(WindowInfo)
             end,
             Name = "Container",
             Position = UDim2.new(1, 0, 0, 49),
-            Size = UDim2.new(0.7, -1, 1, -70),
+            Size = LoadingSizes["Container"].Size,
             Parent = MainFrame,
         })
-
         New("UIPadding", {
             PaddingBottom = UDim.new(0, 0),
             PaddingLeft = UDim.new(0, 6),
@@ -5760,6 +5987,8 @@ function NewWindow(WindowInfo)
             PaddingTop = UDim.new(0, 0),
             Parent = Container,
         })
+
+        table.insert(ElementSizes.Elements["Container"], Container)
     end
 
     --// Window Table \\--
@@ -5788,7 +6017,7 @@ function NewWindow(WindowInfo)
         local TabContainer
         local TabLeft
         local TabRight
-		
+
         local WarningBox
         local WarningBoxScrollingFrame
         local WarningTitle
@@ -5805,13 +6034,16 @@ function NewWindow(WindowInfo)
                 Parent = Tabs,
             })
 
-            New("UIPadding", {
-                PaddingBottom = UDim.new(0, 11),
-                PaddingLeft = UDim.new(0, 12),
-                PaddingRight = UDim.new(0, 12),
-                PaddingTop = UDim.new(0, 11),
-                Parent = TabButton,
-            })
+            table.insert(
+                ElementSizes.Elements["TabButtonUIPadding"],
+                New("UIPadding", {
+                    PaddingBottom = LoadingSizes["TabButtonUIPadding"].PaddingBottom,
+                    PaddingLeft = LoadingSizes["TabButtonUIPadding"].PaddingLeft,
+                    PaddingRight = LoadingSizes["TabButtonUIPadding"].PaddingRight,
+                    PaddingTop = LoadingSizes["TabButtonUIPadding"].PaddingTop,
+                    Parent = TabButton,
+                })
+            )
 
             TabLabel = New("TextLabel", {
                 BackgroundTransparency = 1,
@@ -5821,8 +6053,10 @@ function NewWindow(WindowInfo)
                 TextSize = 16,
                 TextTransparency = 0.5,
                 TextXAlignment = Enum.TextXAlignment.Left,
+                Visible = LoadingSizes["TabLabel"].Visible,
                 Parent = TabButton,
             })
+            table.insert(ElementSizes.Elements["TabLabel"], TabLabel)
 
             if Icon then
                 TabIcon = New("ImageLabel", {
@@ -5981,26 +6215,40 @@ function NewWindow(WindowInfo)
                 LockSize = false,
                 Visible = false,
                 Title = "WARNING",
-                Text = ""
-            }
+                Text = "",
+            },
         }
 
         function Tab:UpdateWarningBox(Info)
-            if typeof(Info.IsNormal) == "boolean"   then Tab.WarningBox.IsNormal    = Info.IsNormal end
-            if typeof(Info.LockSize) == "boolean"   then Tab.WarningBox.LockSize    = Info.LockSize end
-            if typeof(Info.Visible) == "boolean"    then Tab.WarningBox.Visible     = Info.Visible end
-            if typeof(Info.Title) == "string"       then Tab.WarningBox.Title       = Info.Title end
-            if typeof(Info.Text) == "string"        then Tab.WarningBox.Text        = Info.Text end
+            if typeof(Info.IsNormal) == "boolean" then
+                Tab.WarningBox.IsNormal = Info.IsNormal
+            end
+            if typeof(Info.LockSize) == "boolean" then
+                Tab.WarningBox.LockSize = Info.LockSize
+            end
+            if typeof(Info.Visible) == "boolean" then
+                Tab.WarningBox.Visible = Info.Visible
+            end
+            if typeof(Info.Title) == "string" then
+                Tab.WarningBox.Title = Info.Title
+            end
+            if typeof(Info.Text) == "string" then
+                Tab.WarningBox.Text = Info.Text
+            end
 
             WarningBox.Visible = Tab.WarningBox.Visible
             WarningTitle.Text = Tab.WarningBox.Title
             WarningText.Text = Tab.WarningBox.Text
             Tab:Resize(true)
 
-            WarningBox.BackgroundColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.BackgroundColor or Color3.fromRGB(127, 0, 0)
-            WarningBox.BorderColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.OutlineColor or Color3.fromRGB(255, 50, 50)
-            WarningTitle.TextColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.FontColor or Color3.fromRGB(255, 50, 50)
-            WarningStroke.Color = Tab.WarningBox.IsNormal == true and Library.Scheme.OutlineColor or Color3.fromRGB(169, 0, 0)
+            WarningBox.BackgroundColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.BackgroundColor
+                or Color3.fromRGB(127, 0, 0)
+            WarningBox.BorderColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.OutlineColor
+                or Color3.fromRGB(255, 50, 50)
+            WarningTitle.TextColor3 = Tab.WarningBox.IsNormal == true and Library.Scheme.FontColor
+                or Color3.fromRGB(255, 50, 50)
+            WarningStroke.Color = Tab.WarningBox.IsNormal == true and Library.Scheme.OutlineColor
+                or Color3.fromRGB(169, 0, 0)
 
             if not Library.Registry[WarningBox] then
                 Library:AddToRegistry(WarningBox, {})
@@ -6029,6 +6277,18 @@ function NewWindow(WindowInfo)
             end
         end
 
+        function Tab:RefreshSides()
+            local Offset = WarningBox.Visible and WarningBox.AbsoluteSize.Y + 6 or 0
+            for _, Side in pairs(Tab.Sides) do
+                Side.Position = UDim2.new(Side.Position.X.Scale, 0, 0, Offset)
+                Side.Size = UDim2.new(0, math.floor(TabContainer.AbsoluteSize.X / 2) - 3, 1, -Offset)
+                Library:UpdateDPI(Side, {
+                    Position = Side.Position,
+                    Size = Side.Size,
+                })
+            end
+        end
+
         function Tab:Resize(ResizeWarningBox: boolean?)
             if ResizeWarningBox then
                 local MaximumSize = math.floor(TabContainer.AbsoluteSize.Y / 3.25)
@@ -6054,15 +6314,7 @@ function NewWindow(WindowInfo)
                 Library:UpdateDPI(WarningBox, { Size = WarningBox.Size })
             end
 
-            local Offset = WarningBox.Visible and WarningBox.AbsoluteSize.Y + 6 or 0
-            for _, Side in pairs(Tab.Sides) do
-                Side.Position = UDim2.new(Side.Position.X.Scale, 0, 0, Offset)
-                Side.Size = UDim2.new(0, math.floor(TabContainer.AbsoluteSize.X / 2) - 3, 1, -Offset)
-                Library:UpdateDPI(Side, {
-                    Position = Side.Position,
-                    Size = Side.Size,
-                })
-            end
+            Tab:RefreshSides()
         end
 
         function Tab:AddGroupbox(Info)
@@ -6377,7 +6629,7 @@ function NewWindow(WindowInfo)
 
             if Description then
                 CurrentTabInfo.Visible = true
-                
+
                 if IsDefaultSearchbarSize then
                     SearchBox.Size = UDim2.fromScale(0.5, 1)
                 end
@@ -6387,6 +6639,7 @@ function NewWindow(WindowInfo)
             end
 
             TabContainer.Visible = true
+            Tab:RefreshSides()
 
             Library.ActiveTab = Tab
 
@@ -6412,7 +6665,7 @@ function NewWindow(WindowInfo)
             if IsDefaultSearchbarSize then
                 SearchBox.Size = UDim2.fromScale(1, 1)
             end
-            
+
             CurrentTabInfo.Visible = false
 
             Library.ActiveTab = nil
@@ -6451,13 +6704,16 @@ function NewWindow(WindowInfo)
                 Text = "",
                 Parent = Tabs,
             })
-            New("UIPadding", {
-                PaddingBottom = UDim.new(0, 11),
-                PaddingLeft = UDim.new(0, 12),
-                PaddingRight = UDim.new(0, 12),
-                PaddingTop = UDim.new(0, 11),
-                Parent = TabButton,
-            })
+            table.insert(
+                ElementSizes.Elements["TabButtonUIPadding"],
+                New("UIPadding", {
+                    PaddingBottom = LoadingSizes["TabButtonUIPadding"].PaddingBottom,
+                    PaddingLeft = LoadingSizes["TabButtonUIPadding"].PaddingLeft,
+                    PaddingRight = LoadingSizes["TabButtonUIPadding"].PaddingRight,
+                    PaddingTop = LoadingSizes["TabButtonUIPadding"].PaddingTop,
+                    Parent = TabButton,
+                })
+            )
 
             TabLabel = New("TextLabel", {
                 BackgroundTransparency = 1,
@@ -6467,8 +6723,10 @@ function NewWindow(WindowInfo)
                 TextSize = 16,
                 TextTransparency = 0.5,
                 TextXAlignment = Enum.TextXAlignment.Left,
+                Visible = LoadingSizes["TabLabel"].Visible,
                 Parent = TabButton,
             })
+            table.insert(ElementSizes.Elements["TabLabel"], TabLabel)
 
             if KeyIcon then
                 TabIcon = New("ImageLabel", {
@@ -6568,6 +6826,7 @@ function NewWindow(WindowInfo)
             end)
         end
 
+        function Tab:RefreshSides() end
         function Tab:Resize() end
 
         function Tab:Hover(Hovering)
@@ -6652,7 +6911,7 @@ function NewWindow(WindowInfo)
         end
 
         MainFrame.Visible = Library.Toggled
-        
+
         if WindowInfo.UnlockMouseWhileOpen then
             ModalElement.Modal = Library.Toggled
         end
@@ -6739,6 +6998,8 @@ function NewWindow(WindowInfo)
     Library:GiveSignal(UserInputService.WindowFocusReleased:Connect(function()
         Library.IsRobloxFocused = false
     end))
+
+    ElementSizes.Loaded = true
 
     return Window
 end
