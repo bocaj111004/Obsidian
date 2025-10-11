@@ -1875,7 +1875,7 @@ do
 
        
 
-        local PickOuter = Library:Create('Frame', {
+        local PickOuter = New('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Size = UDim2.new(0, 28, 0, 15);
@@ -1883,7 +1883,7 @@ do
             Parent = ToggleLabel;
         });
 
-        local PickInner = Library:Create('Frame', {
+        local PickInner = New('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
@@ -1897,7 +1897,7 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        local DisplayLabel = Library:CreateLabel({
+        local DisplayLabel = NewLabel({
             Size = UDim2.new(1, 0, 1, 0);
             TextSize = 13;
             Text = Info.Default;
@@ -1909,7 +1909,7 @@ do
         -- Keybinds Text
         local KeybindsToggle = {}
         do
-            local KeybindsToggleContainer = Library:Create('Frame', {
+            local KeybindsToggleContainer = New('Frame', {
                 BackgroundTransparency = 1;
                 Size = UDim2.new(1, 0, 0, 18);
                 Visible = false;
@@ -1917,7 +1917,7 @@ do
                 Parent = Library.KeybindContainer;
             });
 
-            local KeybindsToggleOuter = Library:Create('Frame', {
+            local KeybindsToggleOuter = New('Frame', {
                 BackgroundColor3 = Color3.new(0, 0, 0);
                 BorderColor3 = Color3.new(0, 0, 0);
                 Size = UDim2.new(0, 13, 0, 13);
@@ -1931,7 +1931,7 @@ do
                 BorderColor3 = 'Black';
             });
 
-            local KeybindsToggleInner = Library:Create('Frame', {
+            local KeybindsToggleInner = New('Frame', {
                 BackgroundColor3 = Library.MainColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
@@ -1945,7 +1945,7 @@ do
                 BorderColor3 = 'OutlineColor';
             });
 
-            local KeybindsToggleLabel = Library:CreateLabel({
+            local KeybindsToggleLabel = NewLabel({
                 BackgroundTransparency = 1;
                 Size = UDim2.new(0, 216, 1, 0);
                 Position = UDim2.new(1, 6, 0, -1);
@@ -1956,7 +1956,7 @@ do
                 Parent = KeybindsToggleInner;
             });
 
-            Library:Create('UIListLayout', {
+            New('UIListLayout', {
                 Padding = UDim.new(0, 4);
                 FillDirection = Enum.FillDirection.Horizontal;
                 HorizontalAlignment = Enum.HorizontalAlignment.Right;
@@ -1965,7 +1965,7 @@ do
                 Parent = KeybindsToggleLabel;
             });
 
-            local KeybindsToggleRegion = Library:Create('Frame', {
+            local KeybindsToggleRegion = New('Frame', {
                 BackgroundTransparency = 1;
                 Size = UDim2.new(0, 170, 1, 0);
                 ZIndex = 113;
@@ -2021,7 +2021,7 @@ do
             KeybindsToggle.Loaded = true;
         end;
 
-        local ModeSelectOuter = Library:Create('Frame', {
+        local ModeSelectOuter = New('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
             BackgroundTransparency = 1;
             Size = UDim2.new(0, 80, 0, 0);
@@ -2037,7 +2037,7 @@ do
         UpdateMenuOuterPos();
         ToggleLabel:GetPropertyChangedSignal('AbsolutePosition'):Connect(UpdateMenuOuterPos);
 
-        local ModeSelectInner = Library:Create('Frame', {
+        local ModeSelectInner = New('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
@@ -2051,7 +2051,7 @@ do
             BorderColor3 = 'OutlineColor';
         });
 
-        Library:Create('UIListLayout', {
+        New('UIListLayout', {
             FillDirection = Enum.FillDirection.Vertical;
             SortOrder = Enum.SortOrder.LayoutOrder;
             Parent = ModeSelectInner;
@@ -2064,7 +2064,7 @@ do
         for Idx, Mode in next, Modes do
             local ModeButton = {};
 
-            local Label = Library:CreateLabel({
+            local Label = NewLabel({
                 Active = false;
                 Size = UDim2.new(1, 0, 0, 15);
                 TextSize = 13;
@@ -2110,7 +2110,7 @@ do
 
         -- Create Unbind button --
         do
-            local UnbindInner = Library:Create('Frame', {
+            local UnbindInner = New('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
@@ -2127,7 +2127,7 @@ do
                 BorderColor3 = 'OutlineColor';
             });
 
-            local UnbindLabel = Library:CreateLabel({
+            local UnbindLabel = NewLabel({
                 Active = false;
                 Size = UDim2.new(1, 0, 0, 15);
                 TextSize = 13;
@@ -5401,7 +5401,7 @@ function Library:Notify(...)
     return Data
 end
 
-function Library:CreateWindow(WindowInfo)
+function NewWindow(WindowInfo)
     WindowInfo = Library:Validate(WindowInfo, Templates.Window)
     local ViewportSize: Vector2 = workspace.CurrentCamera.ViewportSize
     if RunService:IsStudio() and ViewportSize.X <= 5 and ViewportSize.Y <= 5 then
